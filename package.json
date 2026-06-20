@@ -1,5 +1,5 @@
 {
-  "name": "cfx-portal-upload",
+  "name": "uploader",
   "description": "Re-Upload your escrow resources to portal.cfx.re using GitHub Actions",
   "version": "0.0.0",
   "author": "KOJA",

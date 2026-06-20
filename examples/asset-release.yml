@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # Required for HQ/LQ multi-branch support
 
       - name: Upload HQ and LQ versions
-        uses: Kojadev/cfx-portal-upload@main
+        uses: Koja-Scripts/uploader@main
         with:
           cookie: ${{ secrets.CFX_COOKIE }}
           chunkSize: 20971520 # 20MB chunks for faster upload on Hetzner

@@ -2,7 +2,8 @@ import * as core from '@actions/core'
 import FormData from 'form-data'
 import axios from 'axios'
 
-import { createReadStream, statSync } from 'fs'
+import { createReadStream, readFileSync, statSync } from 'fs'
+import { Agent } from 'https'
 import { basename } from 'path'
 import { ReUploadResponse, BuildOptions, ZipPaths } from './types'
 import { getPortalCookies } from './auth'
@@ -305,10 +306,67 @@ export async function run(): Promise<void> {
       zipPath = await getZipPath(assetName, zipPath, makeZip)
       await uploadZip(zipPath, assetId, chunkSize, cookies)
     }
+
+    await sendReleaseNotification()
   } catch (error) {
     if (error instanceof Error) {
       core.setFailed(error.message)
     }
+  }
+}
+
+/**
+ * Sends a release notification after a successful upload. The endpoint comes
+ * from the `webhookUrl` input (or the `WEBHOOK_URL` env var) so the URL stays
+ * in a secret rather than the repo. Reads the release details from the GitHub
+ * event payload and falls back to runner env vars. Only fires on `release`
+ * events and never throws — a failed notification must not fail the upload.
+ * @returns {Promise<void>} Resolves once the notification attempt is done.
+ */
+async function sendReleaseNotification(): Promise<void> {
+  if (process.env.GITHUB_EVENT_NAME !== 'release') {
+    core.debug('Not a release event, skipping notification.')
+    return
+  }
+
+  const webhookUrl = core.getInput('webhookUrl') || process.env.WEBHOOK_URL || ''
+  if (!webhookUrl) {
+    core.info('No webhook URL configured, skipping release notification.')
+    return
+  }
+
+  try {
+    let release: { body?: string; tag_name?: string; published_at?: string; author?: { login?: string } } = {}
+
+    const eventPath = process.env.GITHUB_EVENT_PATH
+    if (eventPath) {
+      try {
+        const event = JSON.parse(readFileSync(eventPath, 'utf8'))
+        release = event.release || {}
+      } catch {
+        core.debug('Could not parse the GitHub event payload.')
+      }
+    }
+
+    const payload = {
+      repository: process.env.GITHUB_REPOSITORY || '',
+      description: release.body || process.env.RELEASE_BODY || '',
+      version: release.tag_name || process.env.GITHUB_REF_NAME || '',
+      author: release.author?.login || process.env.GITHUB_ACTOR || '',
+      date: release.published_at || new Date().toISOString()
+    }
+
+    await axios.post(`${webhookUrl}/api/github/release`, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000,
+      httpsAgent: new Agent({ rejectUnauthorized: false })
+    })
+
+    core.info('📣 Release notification sent.')
+  } catch (error) {
+    core.warning(
+      `Release notification failed: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 

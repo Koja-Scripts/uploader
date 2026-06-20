@@ -22,7 +22,7 @@ jobs:
           node-version: '18'
 
       - name: Upload to CFX Portal
-        uses: Kojadev/cfx-portal-upload@main
+        uses: Koja-Scripts/uploader@main
         with:
           cookie: ${{ secrets.CFX_COOKIE }}
           chunkSize: 5242880 # 5MB chunks

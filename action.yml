@@ -61,6 +61,12 @@ inputs:
     description: 'Release changelog / description to include in the version'
     required: false
     default: ''
+  webhookUrl:
+    description:
+      'Release-notification endpoint (pass an org/repo secret, e.g.
+      WEBHOOK_URL). Leave empty to disable notifications.'
+    required: false
+    default: ''
 
 runs:
   using: node24
