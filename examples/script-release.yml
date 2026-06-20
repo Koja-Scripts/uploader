@@ -1,0 +1,35 @@
+name: Upload Script to CFX Portal
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Upload to CFX Portal
+        uses: Kojadev/cfx-portal-upload@main
+        with:
+          cookie: ${{ secrets.CFX_COOKIE }}
+          chunkSize: 5242880 # 5MB chunks
+          escrowed: |
+            asset_id: "123456"
+            asset_name: "my-script-escrowed"
+            escrow_ignore: ['init.lua', 'shared/config.lua', 'shared/utils.lua']
+          openSource: |
+            asset_id: "123457"
+            asset_name: "my-script-opensource"

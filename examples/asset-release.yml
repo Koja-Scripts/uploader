@@ -1,0 +1,28 @@
+name: Upload Assets (EUP/MLO) to CFX Portal
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for HQ/LQ multi-branch support
+
+      - name: Upload HQ and LQ versions
+        uses: Kojadev/cfx-portal-upload@main
+        with:
+          cookie: ${{ secrets.CFX_COOKIE }}
+          chunkSize: 20971520 # 20MB chunks for faster upload on Hetzner
+          hq: |
+            asset_id: "123456"
+            asset_name: "my-eup-pack-hq"
+            branch: "main"
+          lq: |
+            asset_id: "123457"
+            asset_name: "my-eup-pack-lq"
+            branch: "low-quality"

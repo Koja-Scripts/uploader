@@ -1,0 +1,67 @@
+name: 'CFX Portal Upload'
+description:
+  'Uploads assets to CFX Portal with support for escrowed and open source
+  versions'
+author: 'KOJA'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'gray-dark'
+
+inputs:
+  cookie:
+    description: 'Your Forum Account Cookie (_t cookie from forum.cfx.re)'
+    required: true
+  chunkSize:
+    description:
+      'Upload chunk size in bytes (default: 2MB, recommended: 5-20MB for large
+      files)'
+    required: false
+    default: 2097152
+  maxRetries:
+    description: 'Maximum number of login retries'
+    required: false
+    default: 3
+  skipUpload:
+    description: 'Skip upload and only test authentication'
+    required: false
+    default: false
+  # Simple single asset upload
+  assetId:
+    description: 'Asset ID for simple single upload'
+    required: false
+  assetName:
+    description: 'Asset name for simple single upload (will lookup ID)'
+    required: false
+  makeZip:
+    description: 'Automatically create ZIP from repository'
+    required: false
+    default: true
+  zipPath:
+    description: 'Path to pre-made ZIP file'
+    required: false
+  # Script versions (escrowed + open source)
+  escrowed:
+    description:
+      'Escrowed version config (YAML: asset_id, asset_name, escrow_ignore)'
+    required: false
+  openSource:
+    description: 'Open source version config (YAML: asset_id, asset_name)'
+    required: false
+  # Asset versions (HQ + LQ from different branches)
+  hq:
+    description:
+      'High quality version config (YAML: asset_id, asset_name, branch)'
+    required: false
+  lq:
+    description:
+      'Low quality version config (YAML: asset_id, asset_name, branch)'
+    required: false
+  changelog:
+    description: 'Release changelog / description to include in the version'
+    required: false
+    default: ''
+
+runs:
+  using: node24
+  main: dist/index.js
