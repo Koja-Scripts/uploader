@@ -297663,7 +297663,13 @@ async function run() {
             core.debug('No asset id or name provided, using repository name...');
             assetName = (0, path_1.basename)((0, utils_1.getEnv)('GITHUB_WORKSPACE'));
         }
-        const cookies = await (0, auth_1.getPortalCookies)(core.getInput('cookie'), maxRetries);
+        const cookieInput = core.getInput('cookie').trim();
+        if (!cookieInput) {
+            throw new Error('No forum cookie provided. Check that the CFX_COOKIE secret is set and ' +
+                'that this repository has access to it. (Heads-up: organization secrets ' +
+                'are NOT available to private repositories on the GitHub Free plan.)');
+        }
+        const cookies = await (0, auth_1.getPortalCookies)(cookieInput, maxRetries);
         if (skipUpload) {
             core.info('Authenticated with CFX Portal. Skipping upload ...');
             return;

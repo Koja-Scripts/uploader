@@ -50,7 +50,16 @@ export async function run(): Promise<void> {
       assetName = basename(getEnv('GITHUB_WORKSPACE'))
     }
 
-    const cookies = await getPortalCookies(core.getInput('cookie'), maxRetries)
+    const cookieInput = core.getInput('cookie').trim()
+    if (!cookieInput) {
+      throw new Error(
+        'No forum cookie provided. Check that the CFX_COOKIE secret is set and ' +
+          'that this repository has access to it. (Heads-up: organization secrets ' +
+          'are NOT available to private repositories on the GitHub Free plan.)'
+      )
+    }
+
+    const cookies = await getPortalCookies(cookieInput, maxRetries)
 
     if (skipUpload) {
       core.info('Authenticated with CFX Portal. Skipping upload ...')
