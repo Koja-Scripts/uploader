@@ -2,11 +2,19 @@ import * as core from '@actions/core'
 import FormData from 'form-data'
 import axios from 'axios'
 
-import { createReadStream, readFileSync, statSync } from 'fs'
+import { createReadStream, statSync } from 'fs'
 import { Agent } from 'https'
 import { basename } from 'path'
-import { ReUploadResponse, BuildOptions, ZipPaths } from './types'
+import { ReUploadResponse, BuildOptions, VersionMeta, ZipPaths } from './types'
 import { getPortalCookies } from './auth'
+import {
+  PORTAL_MAX_VERSIONS,
+  getReleaseEvent,
+  prepareVersionSlot,
+  pruneVersions,
+  resolveVersionMeta,
+  waitForVersion
+} from './versions'
 import {
   deleteIfExists,
   resolveAssetId,
@@ -45,6 +53,24 @@ export async function run(): Promise<void> {
       throw new Error('Invalid max retries. Must be a number.')
     }
 
+    const keepVersions = parseInt(core.getInput('keepVersions') || '5')
+    if (
+      isNaN(keepVersions) ||
+      keepVersions < 1 ||
+      keepVersions > PORTAL_MAX_VERSIONS
+    ) {
+      throw new Error(
+        `Invalid keepVersions. Must be a number from 1 to ${PORTAL_MAX_VERSIONS}.`
+      )
+    }
+
+    const processingTimeout = parseInt(
+      core.getInput('processingTimeout') || '120'
+    )
+    if (isNaN(processingTimeout) || processingTimeout < 0) {
+      throw new Error('Invalid processingTimeout. Must be a number >= 0.')
+    }
+
     if (!assetId && !assetName && !skipUpload) {
       core.debug('No asset id or name provided, using repository name...')
       assetName = basename(getEnv('GITHUB_WORKSPACE'))
@@ -53,7 +79,7 @@ export async function run(): Promise<void> {
     const cookieInput = core.getInput('cookie').trim()
     if (!cookieInput) {
       throw new Error(
-        'No forum cookie provided. Check that the CFX_COOKIE secret is set and ' +
+        'No forum cookie provided. Check that the cookie secret (e.g. FORUM_COOKIE) is set and ' +
           'that this repository has access to it. (Heads-up: organization secrets ' +
           'are NOT available to private repositories on the GitHub Free plan.)'
       )
@@ -64,6 +90,21 @@ export async function run(): Promise<void> {
     if (skipUpload) {
       core.info('Authenticated with CFX Portal. Skipping upload ...')
       return
+    }
+
+    const meta = resolveVersionMeta()
+    core.info(
+      `🏷️ Version: ${meta.version}` +
+        (meta.releaseCandidate ? ' (release candidate)' : '')
+    )
+    core.debug(`Changelog: ${meta.changelog}`)
+
+    const ctx: UploadContext = {
+      cookies,
+      chunkSize,
+      meta,
+      keepVersions,
+      processingTimeout
     }
 
     let escrowedConfig: any = null
@@ -200,6 +241,7 @@ export async function run(): Promise<void> {
       shouldCreateLQ
     ) {
       const buildOptions: BuildOptions = {
+        version: meta.version,
         createEscrowed: shouldCreateEscrowed,
         createOpenSource: shouldCreateOpenSource,
         createHq: shouldCreateHQ,
@@ -228,7 +270,7 @@ export async function run(): Promise<void> {
         }
 
         core.info('🚀 Uploading escrowed version...')
-        await uploadZip(zipPaths.escrowed, escrowedId, chunkSize, cookies)
+        await uploadVersion(zipPaths.escrowed, escrowedId, ctx)
       }
 
       if (zipPaths.openSource && shouldCreateOpenSource) {
@@ -248,7 +290,7 @@ export async function run(): Promise<void> {
         }
 
         core.info('🚀 Uploading open source version...')
-        await uploadZip(zipPaths.openSource, openSourceId, chunkSize, cookies)
+        await uploadVersion(zipPaths.openSource, openSourceId, ctx)
       }
 
       let hqZipPath: string | null = null
@@ -299,12 +341,12 @@ export async function run(): Promise<void> {
       // Now upload both versions
       if (hqZipPath && hqId) {
         core.info('🚀 Uploading HQ version...')
-        await uploadZip(hqZipPath, hqId, chunkSize, cookies)
+        await uploadVersion(hqZipPath, hqId, ctx)
       }
 
       if (lqZipPath && lqId) {
         core.info('🚀 Uploading LQ version...')
-        await uploadZip(lqZipPath, lqId, chunkSize, cookies)
+        await uploadVersion(lqZipPath, lqId, ctx)
       }
     } else {
       // Original single upload logic
@@ -313,14 +355,73 @@ export async function run(): Promise<void> {
       }
 
       zipPath = await getZipPath(assetName, zipPath, makeZip)
-      await uploadZip(zipPath, assetId, chunkSize, cookies)
+      await uploadVersion(zipPath, assetId, ctx)
     }
 
     await sendReleaseNotification()
   } catch (error) {
-    if (error instanceof Error) {
-      core.setFailed(error.message)
+    if (axios.isAxiosError(error) && error.response) {
+      const { status, statusText, data } = error.response
+      const method = error.config?.method?.toUpperCase() ?? ''
+      core.error(
+        `Portal API ${method} ${error.config?.url} failed: ${status} ${statusText}`
+      )
+      core.error(`Response body: ${JSON.stringify(data)}`)
+
+      const message = (data as { message?: unknown } | undefined)?.message
+      core.setFailed(typeof message === 'string' ? message : error.message)
+    } else {
+      core.setFailed(error instanceof Error ? error.message : String(error))
     }
+  }
+}
+
+interface UploadContext {
+  cookies: string
+  chunkSize: number
+  meta: VersionMeta
+  keepVersions: number
+  processingTimeout: number
+}
+
+/**
+ * Uploads a zip as a new version of an asset: frees a version slot, uploads,
+ * waits for the portal to process it and prunes old versions if requested.
+ * @param zipPath
+ * @param assetId
+ * @param ctx
+ * @returns {Promise<void>} Resolves when the version is uploaded.
+ */
+async function uploadVersion(
+  zipPath: string,
+  assetId: string,
+  ctx: UploadContext
+): Promise<void> {
+  await prepareVersionSlot(assetId, ctx.meta.version, ctx.cookies)
+
+  const versionId = await uploadZip(
+    zipPath,
+    assetId,
+    ctx.chunkSize,
+    ctx.cookies,
+    ctx.meta
+  )
+
+  const versions = await waitForVersion(
+    assetId,
+    versionId,
+    ctx.cookies,
+    ctx.processingTimeout
+  )
+
+  if (versions && ctx.keepVersions < PORTAL_MAX_VERSIONS) {
+    await pruneVersions(
+      assetId,
+      versions,
+      versionId,
+      ctx.keepVersions,
+      ctx.cookies
+    )
   }
 }
 
@@ -338,24 +439,15 @@ async function sendReleaseNotification(): Promise<void> {
     return
   }
 
-  const webhookUrl = core.getInput('webhookUrl') || process.env.WEBHOOK_URL || ''
+  const webhookUrl =
+    core.getInput('webhookUrl') || process.env.WEBHOOK_URL || ''
   if (!webhookUrl) {
     core.info('No webhook URL configured, skipping release notification.')
     return
   }
 
   try {
-    let release: { body?: string; tag_name?: string; published_at?: string; author?: { login?: string } } = {}
-
-    const eventPath = process.env.GITHUB_EVENT_PATH
-    if (eventPath) {
-      try {
-        const event = JSON.parse(readFileSync(eventPath, 'utf8'))
-        release = event.release || {}
-      } catch {
-        core.debug('Could not parse the GitHub event payload.')
-      }
-    }
+    const release = getReleaseEvent()
 
     const payload = {
       repository: process.env.GITHUB_REPOSITORY || '',
@@ -419,22 +511,21 @@ async function getZipPath(
  * @param assetId
  * @param chunkSize
  * @param cookies
- * @returns {Promise<void>} Resolves when the re-upload process is initiated successfully.
+ * @param meta
+ * @returns {Promise<[number, number]>} The asset and new version IDs.
  * @throws If the re-upload fails due to errors in the response.
  */
 async function startReupload(
   zipPath: string,
   assetId: string,
   chunkSize: number,
-  cookies: string
+  cookies: string,
+  meta: VersionMeta
 ): Promise<[number, number]> {
   const stats = statSync(zipPath)
   const totalSize = stats.size
   const originalFileName = basename(zipPath)
   const chunkCount = Math.ceil(totalSize / chunkSize)
-
-  const version = process.env.GITHUB_REF_NAME || '1.0.0'
-  const changelog = core.getInput('changelog') || process.env.RELEASE_BODY || ''
 
   core.info('Starting upload ...')
 
@@ -443,35 +534,24 @@ async function startReupload(
   core.debug(`Chunk size: ${chunkSize}`)
   core.debug(`Chunk count: ${chunkCount}`)
 
-  let reUploadReponse: { data: ReUploadResponse }
-  try {
-    reUploadReponse = await axios.post<ReUploadResponse>(
-      getUrl('REUPLOAD', { id: assetId }),
-      {
-        chunk_count: chunkCount,
-        chunk_size: chunkSize,
-        name: originalFileName,
-        original_file_name: originalFileName,
-        total_size: totalSize,
-        version: version,
-        changelog: changelog,
-        release_candidate: false
-      },
-      {
-        headers: {
-          Cookie: cookies
-        }
+  const reUploadReponse = await axios.post<ReUploadResponse>(
+    getUrl('REUPLOAD', { id: assetId }),
+    {
+      chunk_count: chunkCount,
+      chunk_size: chunkSize,
+      name: originalFileName,
+      original_file_name: originalFileName,
+      total_size: totalSize,
+      version: meta.version,
+      changelog: meta.changelog,
+      release_candidate: meta.releaseCandidate
+    },
+    {
+      headers: {
+        Cookie: cookies
       }
-    )
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      core.error(
-        `Re-upload request failed: ${error.response.status} ${error.response.statusText}`
-      )
-      core.error(`Response body: ${JSON.stringify(error.response.data)}`)
     }
-    throw error
-  }
+  )
 
   if (reUploadReponse.data.errors !== null) {
     core.debug(JSON.stringify(reUploadReponse.data.errors))
@@ -489,20 +569,23 @@ async function startReupload(
  * @param assetId
  * @param chunkSize.
  * @param cookies
- * @returns {Promise<void>} Resolves when the upload is complete.
+ * @param meta
+ * @returns {Promise<number>} The ID of the uploaded version.
  * @throws If the upload fails at any stage.
  */
 async function uploadZip(
   zipPath: string,
   assetId: string,
   chunkSize: number,
-  cookies: string
-): Promise<void> {
+  cookies: string,
+  meta: VersionMeta
+): Promise<number> {
   const [, versionId] = await startReupload(
     zipPath,
     assetId,
     chunkSize,
-    cookies
+    cookies,
+    meta
   )
 
   let chunkIndex = 0
@@ -538,6 +621,8 @@ async function uploadZip(
   }
 
   await completeUpload(assetId, versionId, cookies)
+
+  return versionId
 }
 
 /**

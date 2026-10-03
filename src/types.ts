@@ -50,7 +50,22 @@ export interface AssetConfig {
   branch?: string
 }
 
+export interface ReleaseEvent {
+  tag_name?: string
+  body?: string
+  prerelease?: boolean
+  published_at?: string
+  author?: { login?: string }
+}
+
+export interface VersionMeta {
+  version: string
+  changelog: string
+  releaseCandidate: boolean
+}
+
 export interface BuildOptions {
+  version: string
   createEscrowed: boolean
   createOpenSource: boolean
   createHq: boolean

@@ -7,6 +7,10 @@
  */
 
 import * as core from '@actions/core'
+import axios from 'axios'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import * as main from '../src/main'
 import * as auth from '../src/auth'
 
@@ -122,5 +126,80 @@ describe('action', () => {
     await main.run()
 
     expect(setFailedMock).toHaveBeenCalledWith('auth blew up')
+  })
+
+  it('uploads a release as a new portal version', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'uploader-main-'))
+    const zipPath = path.join(tmp, 'asset.zip')
+    fs.writeFileSync(zipPath, Buffer.alloc(1500))
+    const eventPath = path.join(tmp, 'event.json')
+    fs.writeFileSync(
+      eventPath,
+      JSON.stringify({ release: { tag_name: '1.2.0', body: 'Notes' } })
+    )
+    process.env.GITHUB_WORKSPACE = tmp
+    process.env.GITHUB_EVENT_PATH = eventPath
+
+    getInputMock.mockImplementation(name => {
+      switch (name) {
+        case 'chunkSize':
+          return '1000'
+        case 'maxRetries':
+          return '3'
+        case 'cookie':
+          return 'forum-cookie'
+        case 'assetId':
+          return '42'
+        case 'zipPath':
+          return zipPath
+        default:
+          return ''
+      }
+    })
+
+    const existing = {
+      id: 1,
+      version: '1.0.0',
+      state: 'active',
+      created_at: '2026-01-01'
+    }
+    const uploaded = { ...existing, id: 7, version: '1.2.0' }
+    jest
+      .spyOn(axios, 'get')
+      .mockResolvedValueOnce({ data: { versions: [existing] } } as never)
+      .mockResolvedValueOnce({
+        data: { versions: [existing, uploaded] }
+      } as never)
+    const postMock = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValueOnce({
+        data: { asset_id: 42, version_id: 7, errors: null }
+      } as never)
+      .mockResolvedValue({ data: {} } as never)
+    const setFailedMock = jest.spyOn(core, 'setFailed')
+
+    await main.run()
+
+    expect(setFailedMock).not.toHaveBeenCalled()
+    expect(postMock).toHaveBeenNthCalledWith(
+      1,
+      'https://portal-api.cfx.re/v1/assets/42/re-upload',
+      expect.objectContaining({
+        chunk_count: 2,
+        version: '1.2.0',
+        changelog: 'Notes',
+        release_candidate: false
+      }),
+      expect.anything()
+    )
+    expect(postMock).toHaveBeenLastCalledWith(
+      'https://portal-api.cfx.re/v1/assets/42/versions/7/complete-upload',
+      {},
+      expect.anything()
+    )
+    expect(postMock).toHaveBeenCalledTimes(4)
+
+    fs.rmSync(tmp, { recursive: true, force: true })
+    delete process.env.GITHUB_EVENT_PATH
   })
 })

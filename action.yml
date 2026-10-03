@@ -57,10 +57,35 @@ inputs:
     description:
       'Low quality version config (YAML: asset_id, asset_name, branch)'
     required: false
-  changelog:
-    description: 'Release changelog / description to include in the version'
+  # Portal asset versioning
+  version:
+    description:
+      'Version number shown on the portal (default: the release tag; non-tag
+      runs upload "<fxmanifest version>-dev.<sha>" as a release candidate)'
     required: false
     default: ''
+  changelog:
+    description: 'Changelog for the version (default: the GitHub release body)'
+    required: false
+    default: ''
+  releaseCandidate:
+    description:
+      'Mark the version as a release candidate: true/false (default: true for
+      GitHub pre-releases)'
+    required: false
+    default: ''
+  keepVersions:
+    description:
+      'How many versions to keep per asset (1-5). The portal allows 5; the
+      oldest is always removed to make room for a new upload.'
+    required: false
+    default: 5
+  processingTimeout:
+    description:
+      'Seconds to wait for the portal to process the upload (0 disables). A
+      failed processing fails the run; a timeout only warns.'
+    required: false
+    default: 120
   webhookUrl:
     description:
       'Release-notification endpoint (pass an org/repo secret, e.g.

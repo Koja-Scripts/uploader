@@ -12,7 +12,7 @@ export async function resolveAssetId(
 ): Promise<string> {
   try {
     const search = await axios.get<SearchResponse>(
-      `https://portal-api.cfx.re/v1/me/assets?search=${name}&sort=asset.name&direction=asc`,
+      `https://portal-api.cfx.re/v1/me/assets?search=${encodeURIComponent(name)}&sort=asset.name&direction=asc`,
       {
         headers: {
           Cookie: cookies
@@ -412,11 +412,13 @@ export async function createLQVersion(
  * Creates escrowed version of the asset
  * @param assetName The name of the asset
  * @param ignoreFiles Optional array of files to ignore in escrow
+ * @param version Version written into fxmanifest.lua
  * @returns Path to the escrowed zip file
  */
 export async function createEscrowedVersion(
   assetName: string,
-  ignoreFiles?: string[]
+  ignoreFiles?: string[],
+  version?: string
 ): Promise<string> {
   core.info('Creating escrowed version...')
 
@@ -453,7 +455,8 @@ export async function createEscrowedVersion(
   const fxmanifestPath = path.join(escrowedDir, 'fxmanifest.lua')
   updateFxManifestMetadata(
     fxmanifestPath,
-    path.basename(getEnv('GITHUB_WORKSPACE'))
+    path.basename(getEnv('GITHUB_WORKSPACE')),
+    version
   )
 
   if (fs.existsSync(fxmanifestPath)) {
@@ -478,10 +481,12 @@ export async function createEscrowedVersion(
 /**
  * Creates open source version of the asset
  * @param assetName The name of the asset
+ * @param version Version written into fxmanifest.lua
  * @returns Path to the open source zip file
  */
 export async function createOpenSourceVersion(
-  assetName: string
+  assetName: string,
+  version?: string
 ): Promise<string> {
   core.info('Creating open-source version...')
 
@@ -518,7 +523,8 @@ export async function createOpenSourceVersion(
   const fxmanifestPath = path.join(openSourceDir, 'fxmanifest.lua')
   updateFxManifestMetadata(
     fxmanifestPath,
-    path.basename(getEnv('GITHUB_WORKSPACE'))
+    path.basename(getEnv('GITHUB_WORKSPACE')),
+    version
   )
 
   if (fs.existsSync(fxmanifestPath)) {
@@ -541,10 +547,12 @@ escrow_ignore {
  * Updates fxmanifest.lua with repository metadata
  * @param fxmanifestPath Path to fxmanifest.lua file
  * @param resourceName Name of the resource (from workspace folder)
+ * @param version Version to write (defaults to the git ref name)
  */
 function updateFxManifestMetadata(
   fxmanifestPath: string,
-  resourceName: string
+  resourceName: string,
+  version = process.env.GITHUB_REF_NAME || '1.0.0'
 ): void {
   if (!fs.existsSync(fxmanifestPath)) {
     return
@@ -552,7 +560,6 @@ function updateFxManifestMetadata(
 
   let content = fs.readFileSync(fxmanifestPath, 'utf8')
 
-  const tagName = process.env.GITHUB_REF_NAME || '1.0.0'
   const displayName = resourceName.toUpperCase().replace(/-/g, ' ')
 
   const descriptionMatch = content.match(
@@ -565,7 +572,7 @@ function updateFxManifestMetadata(
   const updates = [
     { field: 'name', value: `'${displayName}'` },
     { field: 'author', value: `'Koja Scripts'` },
-    { field: 'version', value: `'${tagName}'` },
+    { field: 'version', value: `'${version}'` },
     { field: 'description', value: `'${existingDescription}'` }
   ]
 
@@ -718,14 +725,18 @@ export async function createVersions(
 
     zipPaths.escrowed = await createEscrowedVersion(
       escrowedName,
-      escrowIgnoreFiles
+      escrowIgnoreFiles,
+      options.version
     )
   }
 
   if (options.createOpenSource) {
     const openSourceName =
       options.openSourceConfig?.asset_name || `${assetName}-source`
-    zipPaths.openSource = await createOpenSourceVersion(openSourceName)
+    zipPaths.openSource = await createOpenSourceVersion(
+      openSourceName,
+      options.version
+    )
   }
 
   return zipPaths
