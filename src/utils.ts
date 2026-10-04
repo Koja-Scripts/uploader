@@ -571,7 +571,10 @@ function updateFxManifestMetadata(
 
   const updates = [
     { field: 'name', value: `'${displayName}'` },
-    { field: 'author', value: `'Koja Scripts'` },
+    {
+      field: 'author',
+      value: `'${core.getInput('author') || 'Koja Scripts'}'`
+    },
     { field: 'version', value: `'${version}'` },
     { field: 'description', value: `'${existingDescription}'` }
   ]

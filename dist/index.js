@@ -300283,7 +300283,10 @@ function updateFxManifestMetadata(fxmanifestPath, resourceName, version = proces
         : `${resourceName} - FiveM Resource`;
     const updates = [
         { field: 'name', value: `'${displayName}'` },
-        { field: 'author', value: `'Koja Scripts'` },
+        {
+            field: 'author',
+            value: `'${core.getInput('author') || 'Koja Scripts'}'`
+        },
         { field: 'version', value: `'${version}'` },
         { field: 'description', value: `'${existingDescription}'` }
     ];
@@ -300457,6 +300460,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.PORTAL_MAX_VERSIONS = void 0;
 exports.getReleaseEvent = getReleaseEvent;
 exports.resolveVersionMeta = resolveVersionMeta;
+exports.formatChangelog = formatChangelog;
 exports.getAssetVersions = getAssetVersions;
 exports.deleteAssetVersion = deleteAssetVersion;
 exports.getProtectedVersionId = getProtectedVersionId;
@@ -300536,11 +300540,50 @@ function resolveVersionMeta() {
     const rcInput = core.getInput('releaseCandidate').trim().toLowerCase();
     const releaseCandidate = rcInput === 'true' ||
         (rcInput !== 'false' && (release.prerelease === true || devBuild));
-    const changelog = core.getInput('changelog').trim() ||
-        release.body?.trim() ||
-        process.env.RELEASE_BODY?.trim() ||
-        `Release ${version}`;
+    const changelog = formatChangelog(core.getInput('changelog') || release.body || process.env.RELEASE_BODY) || `Release ${version}`;
     return { version, changelog, releaseCandidate };
+}
+const CHANGELOG_GROUPS = [
+    { re: /^\s*[-*]?\s*\[\+\]\s*/, title: 'Added' },
+    { re: /^\s*[-*]?\s*\[[/~*!]\]\s*/, title: 'Changed & fixed' },
+    { re: /^\s*[-*]?\s*\[-\]\s*/, title: 'Removed' }
+];
+/**
+ * Turns release notes into a plain-text portal changelog. Lines written as
+ * `[+] added`, `[/] changed` and `[-] removed` are grouped the same way the
+ * Discord bot groups them; anything else is kept as written, first.
+ * @param body The release notes.
+ * @returns {string} The changelog, or '' when there are no notes.
+ */
+function formatChangelog(body) {
+    const cleaned = String(body ?? '')
+        .replace(/\r\n/g, '\n')
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .trim();
+    const groups = CHANGELOG_GROUPS.map(() => []);
+    const other = [];
+    for (const line of cleaned.split('\n')) {
+        const index = CHANGELOG_GROUPS.findIndex(group => group.re.test(line));
+        if (index === -1) {
+            other.push(line);
+        }
+        else {
+            const text = line.replace(CHANGELOG_GROUPS[index].re, '').trim();
+            groups[index].push(`- ${text}`);
+        }
+    }
+    const sections = [
+        other
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim()
+    ];
+    CHANGELOG_GROUPS.forEach((group, i) => {
+        if (groups[i].length > 0) {
+            sections.push(`${group.title}:\n${groups[i].join('\n')}`);
+        }
+    });
+    return sections.filter(Boolean).join('\n\n');
 }
 /**
  * Fetches all versions of an asset.

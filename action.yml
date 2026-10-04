@@ -57,6 +57,11 @@ inputs:
     description:
       'Low quality version config (YAML: asset_id, asset_name, branch)'
     required: false
+  author:
+    description:
+      'Author written into fxmanifest.lua of the built packs (e.g. Hexel)'
+    required: false
+    default: 'Koja Scripts'
   # Portal asset versioning
   version:
     description:

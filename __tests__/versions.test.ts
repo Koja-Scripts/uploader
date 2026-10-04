@@ -9,6 +9,7 @@ import os from 'os'
 import path from 'path'
 import { AssetVersion } from '../src/types'
 import {
+  formatChangelog,
   getProtectedVersionId,
   prepareVersionSlot,
   pruneVersions,
@@ -124,6 +125,41 @@ describe('versions', () => {
         version: 'v3',
         releaseCandidate: false
       })
+    })
+  })
+
+  describe('formatChangelog', () => {
+    it('groups [+] [/] [-] lines like the Discord bot', () => {
+      const body = [
+        'Big garage update',
+        '<!-- internal note -->',
+        '[+] Parking fees',
+        '- [/] Fixed vehicle duplication',
+        '[!] Rebalanced prices',
+        '[-] Old impound menu'
+      ].join('\r\n')
+
+      expect(formatChangelog(body)).toBe(
+        [
+          'Big garage update',
+          '',
+          'Added:',
+          '- Parking fees',
+          '',
+          'Changed & fixed:',
+          '- Fixed vehicle duplication',
+          '- Rebalanced prices',
+          '',
+          'Removed:',
+          '- Old impound menu'
+        ].join('\n')
+      )
+    })
+
+    it('falls back to "Release <version>" without notes', () => {
+      setRelease({ tag_name: '2.0.0', body: '  ' })
+
+      expect(resolveVersionMeta().changelog).toBe('Release 2.0.0')
     })
   })
 
