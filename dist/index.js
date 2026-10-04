@@ -298978,26 +298978,58 @@ async function getCookiesViaHttp(forumCookie) {
     if (!body || typeof body.url !== 'string') {
         throw new Error('SSO init did not return a redirect URL');
     }
-    // 2. Follow the redirect chain, carrying cookies across domains, until we
-    //    land on the portal (the session cookie is set during the callback).
+    // 2. Follow the redirect chain, carrying cookies across domains, until the
+    //    forum sends us back to the portal app with the signed SSO payload.
     let nextUrl = body.url;
+    let portalUrl;
     for (let hop = 0; hop < 12 && nextUrl; hop++) {
         const res = await jarGet(nextUrl, jar);
         if (res.status >= 300 && res.status < 400 && res.location) {
             nextUrl = new URL(res.location, nextUrl).toString();
             if (new URL(nextUrl).hostname === PORTAL_HOST) {
-                // Final hop is to the portal app; the API cookie is already set.
+                portalUrl = new URL(nextUrl);
                 break;
             }
             continue;
         }
         break;
     }
+    const sso = portalUrl?.searchParams.get('sso');
+    const sig = portalUrl?.searchParams.get('sig');
+    if (!sso || !sig) {
+        throw new Error('Forum did not redirect back to the portal with SSO data (forum cookie invalid or expired?)');
+    }
+    // 3. Hand the SSO payload to portal-api, exactly like the portal's
+    //    /authenticate page does; this sets the `jwt` session cookies.
+    await jarPost((0, utils_1.getUrl)('SSO_CALLBACK'), { sso, sig }, jar);
+    // 4. Only report success once the session really works.
     const cookies = await jar.getCookieString(API_ORIGIN);
-    if (!cookies.includes('=')) {
-        throw new Error('No portal session cookies obtained via HTTP-SSO');
+    const me = await axios_1.default.get((0, utils_1.getUrl)('ME'), {
+        headers: { 'User-Agent': USER_AGENT, Cookie: cookies },
+        validateStatus: () => true
+    });
+    if (me.status !== 200) {
+        throw new Error(`Portal session check failed with status ${me.status}`);
     }
     return cookies;
+}
+/**
+ * POST JSON to portal-api as the portal app would, capturing cookies.
+ */
+async function jarPost(url, body, jar) {
+    const res = await axios_1.default.post(url, body, {
+        headers: {
+            'User-Agent': USER_AGENT,
+            'Content-Type': 'application/json',
+            Origin: `https://${PORTAL_HOST}`,
+            Referer: `https://${PORTAL_HOST}/`,
+            Cookie: await jar.getCookieString(url)
+        }
+    });
+    const setCookies = res.headers['set-cookie'] ?? [];
+    for (const raw of setCookies) {
+        await jar.setCookie(raw, url);
+    }
 }
 // ---------------------------------------------------------------------------
 // Puppeteer fallback (legacy flow). Kept until HTTP-SSO is proven on real runs.
@@ -299739,6 +299771,8 @@ var Urls;
 (function (Urls) {
     Urls["API"] = "https://portal-api.cfx.re/v1/";
     Urls["SSO"] = "auth/discourse?return=";
+    Urls["SSO_CALLBACK"] = "auth/discourse";
+    Urls["ME"] = "me";
     Urls["REUPLOAD"] = "assets/{id}/re-upload";
     Urls["UPLOAD_CHUNK"] = "assets/{id}/versions/{version_id}/upload-chunk";
     Urls["COMPLETE_UPLOAD"] = "assets/{id}/versions/{version_id}/complete-upload";

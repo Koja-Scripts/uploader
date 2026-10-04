@@ -103,16 +103,17 @@ async function getCookiesViaHttp(forumCookie: string): Promise<string> {
     throw new Error('SSO init did not return a redirect URL')
   }
 
-  // 2. Follow the redirect chain, carrying cookies across domains, until we
-  //    land on the portal (the session cookie is set during the callback).
+  // 2. Follow the redirect chain, carrying cookies across domains, until the
+  //    forum sends us back to the portal app with the signed SSO payload.
   let nextUrl: string | undefined = body.url
+  let portalUrl: URL | undefined
   for (let hop = 0; hop < 12 && nextUrl; hop++) {
     const res = await jarGet(nextUrl, jar)
 
     if (res.status >= 300 && res.status < 400 && res.location) {
       nextUrl = new URL(res.location, nextUrl).toString()
       if (new URL(nextUrl).hostname === PORTAL_HOST) {
-        // Final hop is to the portal app; the API cookie is already set.
+        portalUrl = new URL(nextUrl)
         break
       }
       continue
@@ -120,11 +121,53 @@ async function getCookiesViaHttp(forumCookie: string): Promise<string> {
     break
   }
 
-  const cookies = await jar.getCookieString(API_ORIGIN)
-  if (!cookies.includes('=')) {
-    throw new Error('No portal session cookies obtained via HTTP-SSO')
+  const sso = portalUrl?.searchParams.get('sso')
+  const sig = portalUrl?.searchParams.get('sig')
+  if (!sso || !sig) {
+    throw new Error(
+      'Forum did not redirect back to the portal with SSO data (forum cookie invalid or expired?)'
+    )
   }
+
+  // 3. Hand the SSO payload to portal-api, exactly like the portal's
+  //    /authenticate page does; this sets the `jwt` session cookies.
+  await jarPost(getUrl('SSO_CALLBACK'), { sso, sig }, jar)
+
+  // 4. Only report success once the session really works.
+  const cookies = await jar.getCookieString(API_ORIGIN)
+  const me = await axios.get(getUrl('ME'), {
+    headers: { 'User-Agent': USER_AGENT, Cookie: cookies },
+    validateStatus: () => true
+  })
+  if (me.status !== 200) {
+    throw new Error(`Portal session check failed with status ${me.status}`)
+  }
+
   return cookies
+}
+
+/**
+ * POST JSON to portal-api as the portal app would, capturing cookies.
+ */
+async function jarPost(
+  url: string,
+  body: unknown,
+  jar: CookieJar
+): Promise<void> {
+  const res = await axios.post(url, body, {
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/json',
+      Origin: `https://${PORTAL_HOST}`,
+      Referer: `https://${PORTAL_HOST}/`,
+      Cookie: await jar.getCookieString(url)
+    }
+  })
+
+  const setCookies = (res.headers['set-cookie'] as string[] | undefined) ?? []
+  for (const raw of setCookies) {
+    await jar.setCookie(raw, url)
+  }
 }
 
 // ---------------------------------------------------------------------------
