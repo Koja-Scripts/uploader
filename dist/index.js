@@ -300004,6 +300004,7 @@ exports.createHQVersion = createHQVersion;
 exports.createLQVersion = createLQVersion;
 exports.createEscrowedVersion = createEscrowedVersion;
 exports.createOpenSourceVersion = createOpenSourceVersion;
+exports.copyResourceFiles = copyResourceFiles;
 exports.createVersions = createVersions;
 const types_1 = __nccwpck_require__(38522);
 const core = __importStar(__nccwpck_require__(37484));
@@ -300350,25 +300351,7 @@ async function createEscrowedVersion(assetName, ignoreFiles, version) {
     const workspacePath = getEnv('GITHUB_WORKSPACE');
     const escrowedDir = path_1.default.join(workspacePath, 'escrowed');
     await createDirectory(escrowedDir);
-    await createDirectory(path_1.default.join(escrowedDir, 'web', 'build'));
-    const foldersToInclude = ['client', 'shared', 'locales', 'server', 'data'];
-    const filesToInclude = ['fxmanifest.lua', 'init.lua'];
-    for (const folder of foldersToInclude) {
-        const srcPath = path_1.default.join(workspacePath, folder);
-        if (fs_1.default.existsSync(srcPath)) {
-            copyRecursively(srcPath, path_1.default.join(escrowedDir, folder));
-        }
-    }
-    for (const file of filesToInclude) {
-        const srcPath = path_1.default.join(workspacePath, file);
-        if (fs_1.default.existsSync(srcPath)) {
-            fs_1.default.copyFileSync(srcPath, path_1.default.join(escrowedDir, file));
-        }
-    }
-    const webBuildPath = path_1.default.join(workspacePath, 'web', 'build');
-    if (fs_1.default.existsSync(webBuildPath)) {
-        copyRecursively(webBuildPath, path_1.default.join(escrowedDir, 'web', 'build'));
-    }
+    copyResourceFiles(workspacePath, escrowedDir, 'escrowed');
     const fxmanifestPath = path_1.default.join(escrowedDir, 'fxmanifest.lua');
     updateFxManifestMetadata(fxmanifestPath, path_1.default.basename(getEnv('GITHUB_WORKSPACE')), version);
     if (fs_1.default.existsSync(fxmanifestPath)) {
@@ -300401,25 +300384,7 @@ async function createOpenSourceVersion(assetName, version, author) {
     const workspacePath = getEnv('GITHUB_WORKSPACE');
     const openSourceDir = path_1.default.join(workspacePath, 'open-source');
     await createDirectory(openSourceDir);
-    await createDirectory(path_1.default.join(openSourceDir, 'web'));
-    const foldersToInclude = ['client', 'shared', 'locales', 'server', 'data'];
-    const filesToInclude = ['fxmanifest.lua', 'init.lua'];
-    for (const folder of foldersToInclude) {
-        const srcPath = path_1.default.join(workspacePath, folder);
-        if (fs_1.default.existsSync(srcPath)) {
-            copyRecursively(srcPath, path_1.default.join(openSourceDir, folder));
-        }
-    }
-    for (const file of filesToInclude) {
-        const srcPath = path_1.default.join(workspacePath, file);
-        if (fs_1.default.existsSync(srcPath)) {
-            fs_1.default.copyFileSync(srcPath, path_1.default.join(openSourceDir, file));
-        }
-    }
-    const webPath = path_1.default.join(workspacePath, 'web');
-    if (fs_1.default.existsSync(webPath)) {
-        copyRecursively(webPath, path_1.default.join(openSourceDir, 'web'), ['node_modules']);
-    }
+    copyResourceFiles(workspacePath, openSourceDir, 'open-source');
     const fxmanifestPath = path_1.default.join(openSourceDir, 'fxmanifest.lua');
     updateFxManifestMetadata(fxmanifestPath, path_1.default.basename(getEnv('GITHUB_WORKSPACE')), version, author);
     if (fs_1.default.existsSync(fxmanifestPath)) {
@@ -300476,6 +300441,66 @@ function updateFxManifestMetadata(fxmanifestPath, resourceName, version = proces
         }
     }
     fs_1.default.writeFileSync(fxmanifestPath, content, 'utf8');
+}
+/**
+ * Entries of the repository root that are never part of a FiveM resource
+ * pack: VCS and editor folders, CI config, local tooling and build outputs.
+ */
+const NON_RESOURCE_ENTRIES = new Set([
+    '.git',
+    '.github',
+    '.vscode',
+    '.idea',
+    '.claude',
+    'node_modules',
+    'escrowed',
+    'open-source',
+    'dist',
+    '.gitignore',
+    '.gitattributes',
+    '.luarc.json',
+    '.editorconfig',
+    '.DS_Store'
+]);
+/** UI projects whose sources stay out of an escrowed pack (only `build/` ships). */
+const UI_PROJECTS = new Set(['web', 'dui']);
+/**
+ * Copies every resource file of the repository into a pack directory.
+ *
+ * Everything at the root is a candidate (Lua folders, `stream/`, `editable/`,
+ * `.sql` installs, README, LICENSE, ...) except tooling and build outputs.
+ * Escrowed packs take only `build/` from the UI projects, open-source packs
+ * take the UI sources too, without `node_modules`.
+ * @param workspacePath The repository root.
+ * @param targetDir The pack directory.
+ * @param mode Which pack is being built.
+ */
+function copyResourceFiles(workspacePath, targetDir, mode) {
+    for (const entry of fs_1.default.readdirSync(workspacePath, { withFileTypes: true })) {
+        const name = entry.name;
+        if (NON_RESOURCE_ENTRIES.has(name) ||
+            name.startsWith('.env') ||
+            name.endsWith('.zip')) {
+            continue;
+        }
+        const srcPath = path_1.default.join(workspacePath, name);
+        const destPath = path_1.default.join(targetDir, name);
+        if (entry.isDirectory() && UI_PROJECTS.has(name)) {
+            if (mode === 'escrowed') {
+                const buildPath = path_1.default.join(srcPath, 'build');
+                if (fs_1.default.existsSync(buildPath)) {
+                    copyRecursively(buildPath, path_1.default.join(destPath, 'build'));
+                }
+            }
+            else {
+                copyRecursively(srcPath, destPath, ['node_modules']);
+            }
+            continue;
+        }
+        if (entry.isDirectory() || entry.isFile()) {
+            copyRecursively(srcPath, destPath);
+        }
+    }
 }
 /**
  * Creates directory recursively

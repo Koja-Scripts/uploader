@@ -428,29 +428,7 @@ export async function createEscrowedVersion(
   const escrowedDir = path.join(workspacePath, 'escrowed')
 
   await createDirectory(escrowedDir)
-  await createDirectory(path.join(escrowedDir, 'web', 'build'))
-
-  const foldersToInclude = ['client', 'shared', 'locales', 'server', 'data']
-  const filesToInclude = ['fxmanifest.lua', 'init.lua']
-
-  for (const folder of foldersToInclude) {
-    const srcPath = path.join(workspacePath, folder)
-    if (fs.existsSync(srcPath)) {
-      copyRecursively(srcPath, path.join(escrowedDir, folder))
-    }
-  }
-
-  for (const file of filesToInclude) {
-    const srcPath = path.join(workspacePath, file)
-    if (fs.existsSync(srcPath)) {
-      fs.copyFileSync(srcPath, path.join(escrowedDir, file))
-    }
-  }
-
-  const webBuildPath = path.join(workspacePath, 'web', 'build')
-  if (fs.existsSync(webBuildPath)) {
-    copyRecursively(webBuildPath, path.join(escrowedDir, 'web', 'build'))
-  }
+  copyResourceFiles(workspacePath, escrowedDir, 'escrowed')
 
   const fxmanifestPath = path.join(escrowedDir, 'fxmanifest.lua')
   updateFxManifestMetadata(
@@ -498,29 +476,7 @@ export async function createOpenSourceVersion(
   const openSourceDir = path.join(workspacePath, 'open-source')
 
   await createDirectory(openSourceDir)
-  await createDirectory(path.join(openSourceDir, 'web'))
-
-  const foldersToInclude = ['client', 'shared', 'locales', 'server', 'data']
-  const filesToInclude = ['fxmanifest.lua', 'init.lua']
-
-  for (const folder of foldersToInclude) {
-    const srcPath = path.join(workspacePath, folder)
-    if (fs.existsSync(srcPath)) {
-      copyRecursively(srcPath, path.join(openSourceDir, folder))
-    }
-  }
-
-  for (const file of filesToInclude) {
-    const srcPath = path.join(workspacePath, file)
-    if (fs.existsSync(srcPath)) {
-      fs.copyFileSync(srcPath, path.join(openSourceDir, file))
-    }
-  }
-
-  const webPath = path.join(workspacePath, 'web')
-  if (fs.existsSync(webPath)) {
-    copyRecursively(webPath, path.join(openSourceDir, 'web'), ['node_modules'])
-  }
+  copyResourceFiles(workspacePath, openSourceDir, 'open-source')
 
   const fxmanifestPath = path.join(openSourceDir, 'fxmanifest.lua')
   updateFxManifestMetadata(
@@ -598,6 +554,77 @@ function updateFxManifestMetadata(
   }
 
   fs.writeFileSync(fxmanifestPath, content, 'utf8')
+}
+
+/**
+ * Entries of the repository root that are never part of a FiveM resource
+ * pack: VCS and editor folders, CI config, local tooling and build outputs.
+ */
+const NON_RESOURCE_ENTRIES = new Set([
+  '.git',
+  '.github',
+  '.vscode',
+  '.idea',
+  '.claude',
+  'node_modules',
+  'escrowed',
+  'open-source',
+  'dist',
+  '.gitignore',
+  '.gitattributes',
+  '.luarc.json',
+  '.editorconfig',
+  '.DS_Store'
+])
+
+/** UI projects whose sources stay out of an escrowed pack (only `build/` ships). */
+const UI_PROJECTS = new Set(['web', 'dui'])
+
+/**
+ * Copies every resource file of the repository into a pack directory.
+ *
+ * Everything at the root is a candidate (Lua folders, `stream/`, `editable/`,
+ * `.sql` installs, README, LICENSE, ...) except tooling and build outputs.
+ * Escrowed packs take only `build/` from the UI projects, open-source packs
+ * take the UI sources too, without `node_modules`.
+ * @param workspacePath The repository root.
+ * @param targetDir The pack directory.
+ * @param mode Which pack is being built.
+ */
+export function copyResourceFiles(
+  workspacePath: string,
+  targetDir: string,
+  mode: 'escrowed' | 'open-source'
+): void {
+  for (const entry of fs.readdirSync(workspacePath, { withFileTypes: true })) {
+    const name = entry.name
+    if (
+      NON_RESOURCE_ENTRIES.has(name) ||
+      name.startsWith('.env') ||
+      name.endsWith('.zip')
+    ) {
+      continue
+    }
+
+    const srcPath = path.join(workspacePath, name)
+    const destPath = path.join(targetDir, name)
+
+    if (entry.isDirectory() && UI_PROJECTS.has(name)) {
+      if (mode === 'escrowed') {
+        const buildPath = path.join(srcPath, 'build')
+        if (fs.existsSync(buildPath)) {
+          copyRecursively(buildPath, path.join(destPath, 'build'))
+        }
+      } else {
+        copyRecursively(srcPath, destPath, ['node_modules'])
+      }
+      continue
+    }
+
+    if (entry.isDirectory() || entry.isFile()) {
+      copyRecursively(srcPath, destPath)
+    }
+  }
 }
 
 /**
