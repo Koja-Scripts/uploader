@@ -461,16 +461,18 @@ export async function createEscrowedVersion(
  * @param assetName The name of the asset
  * @param version Version written into fxmanifest.lua
  * @param author Author written into fxmanifest.lua
- * @param resourceName Resource folder inside the zip (default: the repository
- *   name), so a repo like `koja-hud-free` can ship as `koja-hud`
+ * @param resourceName When set, the files are zipped inside a folder of this
+ *   name (and the manifest is named after it), so a repo like `koja-hud-free`
+ *   ships as `koja-hud/`. Without it the zip stays flat, as the portal gets it.
  * @returns Path to the open source zip file
  */
 export async function createOpenSourceVersion(
   assetName: string,
   version?: string,
   author?: string,
-  resourceName = path.basename(getEnv('GITHUB_WORKSPACE'))
+  resourceName?: string
 ): Promise<string> {
+  const name = resourceName || path.basename(getEnv('GITHUB_WORKSPACE'))
   core.info('Creating open-source version...')
 
   await buildWebAndDui()
@@ -482,7 +484,7 @@ export async function createOpenSourceVersion(
   copyResourceFiles(workspacePath, openSourceDir, 'open-source')
 
   const fxmanifestPath = path.join(openSourceDir, 'fxmanifest.lua')
-  updateFxManifestMetadata(fxmanifestPath, resourceName, version, author)
+  updateFxManifestMetadata(fxmanifestPath, name, version, author)
 
   if (fs.existsSync(fxmanifestPath)) {
     const escrowIgnore = `
@@ -495,8 +497,8 @@ escrow_ignore {
     fs.appendFileSync(fxmanifestPath, escrowIgnore)
   }
 
-  const zipPath = `${resourceName}.opensource.zip`
-  return await zipDirectory(openSourceDir, zipPath, resourceName)
+  const zipPath = `${name}.opensource.zip`
+  return await zipDirectory(openSourceDir, zipPath, name, [], !!resourceName)
 }
 
 /**
@@ -677,13 +679,15 @@ function copyRecursively(
  * @param sourceDir Source directory to zip
  * @param zipPath Output zip file path
  * @param rootFolderName Name of the root folder in the zip
+ * @param nestInRoot Put the files inside `rootFolderName/` (default: flat)
  * @returns Promise resolving to the absolute path of the created zip file
  */
 async function zipDirectory(
   sourceDir: string,
   zipPath: string,
   rootFolderName: string,
-  excludePaths: string[] = []
+  excludePaths: string[] = [],
+  nestInRoot = false
 ): Promise<string> {
   const zipfile = new yazl.ZipFile()
   const outputZipPath = path.resolve(zipPath)
@@ -708,7 +712,7 @@ async function zipDirectory(
         continue
       }
 
-      const entryZipPath = path.join(zipPath, entry.name)
+      const entryZipPath = path.posix.join(zipPath, entry.name)
       if (entry.isDirectory()) {
         addDirectoryToZip(fullPath, entryZipPath)
       } else if (entry.isFile()) {
@@ -717,7 +721,7 @@ async function zipDirectory(
     }
   }
 
-  addDirectoryToZip(sourceDir, '')
+  addDirectoryToZip(sourceDir, nestInRoot ? rootFolderName : '')
   zipfile.end()
 
   const outputStream = fs.createWriteStream(outputZipPath)
