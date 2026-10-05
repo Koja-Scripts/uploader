@@ -461,12 +461,15 @@ export async function createEscrowedVersion(
  * @param assetName The name of the asset
  * @param version Version written into fxmanifest.lua
  * @param author Author written into fxmanifest.lua
+ * @param resourceName Resource folder inside the zip (default: the repository
+ *   name), so a repo like `koja-hud-free` can ship as `koja-hud`
  * @returns Path to the open source zip file
  */
 export async function createOpenSourceVersion(
   assetName: string,
   version?: string,
-  author?: string
+  author?: string,
+  resourceName = path.basename(getEnv('GITHUB_WORKSPACE'))
 ): Promise<string> {
   core.info('Creating open-source version...')
 
@@ -479,12 +482,7 @@ export async function createOpenSourceVersion(
   copyResourceFiles(workspacePath, openSourceDir, 'open-source')
 
   const fxmanifestPath = path.join(openSourceDir, 'fxmanifest.lua')
-  updateFxManifestMetadata(
-    fxmanifestPath,
-    path.basename(getEnv('GITHUB_WORKSPACE')),
-    version,
-    author
-  )
+  updateFxManifestMetadata(fxmanifestPath, resourceName, version, author)
 
   if (fs.existsSync(fxmanifestPath)) {
     const escrowIgnore = `
@@ -497,9 +495,8 @@ escrow_ignore {
     fs.appendFileSync(fxmanifestPath, escrowIgnore)
   }
 
-  const workspaceName = path.basename(getEnv('GITHUB_WORKSPACE'))
-  const zipPath = `${workspaceName}.opensource.zip`
-  return await zipDirectory(openSourceDir, zipPath, workspaceName)
+  const zipPath = `${resourceName}.opensource.zip`
+  return await zipDirectory(openSourceDir, zipPath, resourceName)
 }
 
 /**

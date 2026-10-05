@@ -64,6 +64,8 @@ export interface HexelConfig {
   product: string
   category?: string
   author: string
+  /** Resource folder inside the zip (default: the repository name). */
+  resource?: string
 }
 
 export interface VersionMeta {

@@ -299261,7 +299261,8 @@ function parseHexelConfig(input) {
     return {
         product: raw.product,
         category: raw.category || undefined,
-        author: raw.author || 'Hexel'
+        author: raw.author || 'Hexel',
+        resource: raw.resource || undefined
     };
 }
 /**
@@ -299301,7 +299302,7 @@ async function publishToHexel(config, meta, secret) {
     }
     core.info(`📦 Building the Hexel pack for "${config.product}"...`);
     (0, utils_1.deleteIfExists)('open-source/');
-    const zipPath = await (0, utils_1.createOpenSourceVersion)(config.product, meta.version, config.author);
+    const zipPath = await (0, utils_1.createOpenSourceVersion)(config.product, meta.version, config.author, config.resource);
     const form = new form_data_1.default();
     form.append('file', fs_1.default.createReadStream(zipPath), {
         filename: `${config.product}.zip`,
@@ -300376,9 +300377,11 @@ async function createEscrowedVersion(assetName, ignoreFiles, version) {
  * @param assetName The name of the asset
  * @param version Version written into fxmanifest.lua
  * @param author Author written into fxmanifest.lua
+ * @param resourceName Resource folder inside the zip (default: the repository
+ *   name), so a repo like `koja-hud-free` can ship as `koja-hud`
  * @returns Path to the open source zip file
  */
-async function createOpenSourceVersion(assetName, version, author) {
+async function createOpenSourceVersion(assetName, version, author, resourceName = path_1.default.basename(getEnv('GITHUB_WORKSPACE'))) {
     core.info('Creating open-source version...');
     await buildWebAndDui();
     const workspacePath = getEnv('GITHUB_WORKSPACE');
@@ -300386,7 +300389,7 @@ async function createOpenSourceVersion(assetName, version, author) {
     await createDirectory(openSourceDir);
     copyResourceFiles(workspacePath, openSourceDir, 'open-source');
     const fxmanifestPath = path_1.default.join(openSourceDir, 'fxmanifest.lua');
-    updateFxManifestMetadata(fxmanifestPath, path_1.default.basename(getEnv('GITHUB_WORKSPACE')), version, author);
+    updateFxManifestMetadata(fxmanifestPath, resourceName, version, author);
     if (fs_1.default.existsSync(fxmanifestPath)) {
         const escrowIgnore = `
 escrow_ignore {
@@ -300397,9 +300400,8 @@ escrow_ignore {
 `;
         fs_1.default.appendFileSync(fxmanifestPath, escrowIgnore);
     }
-    const workspaceName = path_1.default.basename(getEnv('GITHUB_WORKSPACE'));
-    const zipPath = `${workspaceName}.opensource.zip`;
-    return await zipDirectory(openSourceDir, zipPath, workspaceName);
+    const zipPath = `${resourceName}.opensource.zip`;
+    return await zipDirectory(openSourceDir, zipPath, resourceName);
 }
 /**
  * Updates fxmanifest.lua with repository metadata

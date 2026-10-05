@@ -39,7 +39,8 @@ export function parseHexelConfig(input: string): HexelConfig | null {
   return {
     product: raw.product,
     category: raw.category || undefined,
-    author: raw.author || 'Hexel'
+    author: raw.author || 'Hexel',
+    resource: raw.resource || undefined
   }
 }
 
@@ -96,7 +97,8 @@ export async function publishToHexel(
   const zipPath = await createOpenSourceVersion(
     config.product,
     meta.version,
-    config.author
+    config.author,
+    config.resource
   )
 
   const form = new FormData()

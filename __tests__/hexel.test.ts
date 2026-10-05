@@ -40,13 +40,17 @@ describe('hexel', () => {
       {
         product: 'carmarket',
         category: 'scripts',
-        author: 'Hexel'
+        author: 'Hexel',
+        resource: undefined
       }
     )
-    expect(parseHexelConfig('{"product":"x","author":"HX"}')).toEqual({
+    expect(
+      parseHexelConfig('{"product":"x","author":"HX","resource":"koja-hud"}')
+    ).toEqual({
       product: 'x',
       category: undefined,
-      author: 'HX'
+      author: 'HX',
+      resource: 'koja-hud'
     })
     expect(parseHexelConfig('  ')).toBeNull()
     expect(() => parseHexelConfig('category: a')).toThrow('product')
@@ -65,19 +69,22 @@ describe('hexel', () => {
     const build = jest
       .spyOn(utils, 'createOpenSourceVersion')
       .mockResolvedValue(zip)
-    const post = jest
-      .spyOn(axios, 'post')
-      .mockResolvedValue({
-        data: { fileName: 'carmarket-v1.5.0.zip' }
-      } as never)
+    const post = jest.spyOn(axios, 'post').mockResolvedValue({
+      data: { fileName: 'carmarket-v1.5.0.zip' }
+    } as never)
 
     await publishToHexel(
-      { product: 'carmarket', author: 'Hexel' },
+      { product: 'carmarket', author: 'Hexel', resource: 'koja-carmarket' },
       meta,
       'secret'
     )
 
-    expect(build).toHaveBeenCalledWith('carmarket', '1.5', 'Hexel')
+    expect(build).toHaveBeenCalledWith(
+      'carmarket',
+      '1.5',
+      'Hexel',
+      'koja-carmarket'
+    )
     expect(post).toHaveBeenCalledWith(
       HEXEL_UPLOAD_URL,
       expect.anything(),
