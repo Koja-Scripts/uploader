@@ -299181,6 +299181,153 @@ async function setForumCookie(browser, forumCookie) {
 
 /***/ }),
 
+/***/ 88171:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.HEXEL_UPLOAD_URL = void 0;
+exports.parseHexelConfig = parseHexelConfig;
+exports.toSemver = toSemver;
+exports.publishToHexel = publishToHexel;
+const core = __importStar(__nccwpck_require__(37484));
+const axios_1 = __importDefault(__nccwpck_require__(87269));
+const form_data_1 = __importDefault(__nccwpck_require__(96454));
+const fs_1 = __importDefault(__nccwpck_require__(79896));
+const utils_1 = __nccwpck_require__(71798);
+exports.HEXEL_UPLOAD_URL = 'https://hexelstore.com/api/admin/uploads/download';
+/**
+ * Parses the `hexel` input: JSON or simple `key: value` lines.
+ * @param input The raw input.
+ * @returns {HexelConfig | null} The config, or null when the input is empty.
+ */
+function parseHexelConfig(input) {
+    if (!input.trim()) {
+        return null;
+    }
+    let raw;
+    try {
+        raw = JSON.parse(input);
+    }
+    catch {
+        raw = {};
+        for (const line of input.split('\n')) {
+            const match = line.match(/^\s*(\w+):\s*(.*)$/);
+            if (match) {
+                raw[match[1]] = match[2].replace(/["']/g, '').trim();
+            }
+        }
+    }
+    if (!raw.product) {
+        throw new Error('The hexel config needs a `product` (Hexel store slug).');
+    }
+    return {
+        product: raw.product,
+        category: raw.category || undefined,
+        author: raw.author || 'Hexel'
+    };
+}
+/**
+ * The Hexel store only takes `X.Y.Z` versions: "1.5" becomes "1.5.0" and
+ * "v3" becomes "3.0.0".
+ * @param version The release version.
+ * @returns {string | null} The semver, or null when there is no number.
+ */
+function toSemver(version) {
+    const match = version
+        .trim()
+        .replace(/^v/i, '')
+        .match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)$/);
+    return match
+        ? `${match[1]}.${match[2] ?? 0}.${match[3] ?? 0}${match[4]}`
+        : null;
+}
+/**
+ * Builds the open-source pack with the Hexel author and publishes it as a
+ * download (with changelog) on the Hexel store product.
+ * @param config The Hexel config.
+ * @param meta The release metadata.
+ * @param secret The Hexel store API secret (PROJECT_API_SECRET).
+ */
+async function publishToHexel(config, meta, secret) {
+    if (!secret) {
+        throw new Error('The hexel config is set but hexelSecret is empty. Add the Hexel store ' +
+            'API secret (e.g. HEXEL_API_SECRET) to this repository.');
+    }
+    if (meta.releaseCandidate) {
+        core.info('⏭️ Release candidate — not publishing it to the Hexel store.');
+        return;
+    }
+    const semver = toSemver(meta.version);
+    if (!semver) {
+        throw new Error(`Version "${meta.version}" has no number the Hexel store can use.`);
+    }
+    core.info(`📦 Building the Hexel pack for "${config.product}"...`);
+    (0, utils_1.deleteIfExists)('open-source/');
+    const zipPath = await (0, utils_1.createOpenSourceVersion)(config.product, meta.version, config.author);
+    const form = new form_data_1.default();
+    form.append('file', fs_1.default.createReadStream(zipPath), {
+        filename: `${config.product}.zip`,
+        contentType: 'application/zip'
+    });
+    form.append('productSlug', config.product);
+    form.append('version', `v${semver}`);
+    form.append('changelog', meta.changelog);
+    if (config.category) {
+        form.append('categorySlug', config.category);
+    }
+    core.info(`🚀 Publishing v${semver} to the Hexel store...`);
+    const response = await axios_1.default.post(exports.HEXEL_UPLOAD_URL, form, {
+        headers: { ...form.getHeaders(), Authorization: `Bearer ${secret}` },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+    });
+    core.info(`✅ Hexel store: ${response.data.fileName ?? 'uploaded'}` +
+        (response.data.prunedVersions
+            ? ` (removed ${response.data.prunedVersions} old version(s))`
+            : ''));
+}
+
+
+/***/ }),
+
 /***/ 79407:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -299283,6 +299430,7 @@ const fs_1 = __nccwpck_require__(79896);
 const https_1 = __nccwpck_require__(65692);
 const path_1 = __nccwpck_require__(16928);
 const auth_1 = __nccwpck_require__(29081);
+const hexel_1 = __nccwpck_require__(88171);
 const versions_1 = __nccwpck_require__(27902);
 const utils_1 = __nccwpck_require__(71798);
 /**
@@ -299315,6 +299463,25 @@ async function run() {
         const processingTimeout = parseInt(core.getInput('processingTimeout') || '120');
         if (isNaN(processingTimeout) || processingTimeout < 0) {
             throw new Error('Invalid processingTimeout. Must be a number >= 0.');
+        }
+        // A repo sold only on the Hexel store has no CFX asset (and no cookie).
+        const hexelConfig = (0, hexel_1.parseHexelConfig)(core.getInput('hexel'));
+        const hexelSecret = core.getInput('hexelSecret');
+        const cfxWanted = skipUpload ||
+            !hexelConfig ||
+            [
+                'assetId',
+                'assetName',
+                'zipPath',
+                'escrowed',
+                'openSource',
+                'hq',
+                'lq'
+            ].some(name => core.getInput(name));
+        if (hexelConfig && !cfxWanted) {
+            await (0, hexel_1.publishToHexel)(hexelConfig, (0, versions_1.resolveVersionMeta)(), hexelSecret);
+            await sendReleaseNotification();
+            return;
         }
         if (!assetId && !assetName && !skipUpload) {
             core.debug('No asset id or name provided, using repository name...');
@@ -299572,6 +299739,9 @@ async function run() {
             }
             zipPath = await getZipPath(assetName, zipPath, makeZip);
             await uploadVersion(zipPath, assetId, ctx);
+        }
+        if (hexelConfig) {
+            await (0, hexel_1.publishToHexel)(hexelConfig, meta, hexelSecret);
         }
         await sendReleaseNotification();
     }
@@ -300222,9 +300392,10 @@ async function createEscrowedVersion(assetName, ignoreFiles, version) {
  * Creates open source version of the asset
  * @param assetName The name of the asset
  * @param version Version written into fxmanifest.lua
+ * @param author Author written into fxmanifest.lua
  * @returns Path to the open source zip file
  */
-async function createOpenSourceVersion(assetName, version) {
+async function createOpenSourceVersion(assetName, version, author) {
     core.info('Creating open-source version...');
     await buildWebAndDui();
     const workspacePath = getEnv('GITHUB_WORKSPACE');
@@ -300250,7 +300421,7 @@ async function createOpenSourceVersion(assetName, version) {
         copyRecursively(webPath, path_1.default.join(openSourceDir, 'web'), ['node_modules']);
     }
     const fxmanifestPath = path_1.default.join(openSourceDir, 'fxmanifest.lua');
-    updateFxManifestMetadata(fxmanifestPath, path_1.default.basename(getEnv('GITHUB_WORKSPACE')), version);
+    updateFxManifestMetadata(fxmanifestPath, path_1.default.basename(getEnv('GITHUB_WORKSPACE')), version, author);
     if (fs_1.default.existsSync(fxmanifestPath)) {
         const escrowIgnore = `
 escrow_ignore {
@@ -300270,8 +300441,9 @@ escrow_ignore {
  * @param fxmanifestPath Path to fxmanifest.lua file
  * @param resourceName Name of the resource (from workspace folder)
  * @param version Version to write (defaults to the git ref name)
+ * @param author Author to write (defaults to the `author` input)
  */
-function updateFxManifestMetadata(fxmanifestPath, resourceName, version = process.env.GITHUB_REF_NAME || '1.0.0') {
+function updateFxManifestMetadata(fxmanifestPath, resourceName, version = process.env.GITHUB_REF_NAME || '1.0.0', author = core.getInput('author') || 'Koja Scripts') {
     if (!fs_1.default.existsSync(fxmanifestPath)) {
         return;
     }
@@ -300283,10 +300455,7 @@ function updateFxManifestMetadata(fxmanifestPath, resourceName, version = proces
         : `${resourceName} - FiveM Resource`;
     const updates = [
         { field: 'name', value: `'${displayName}'` },
-        {
-            field: 'author',
-            value: `'${core.getInput('author') || 'Koja Scripts'}'`
-        },
+        { field: 'author', value: `'${author}'` },
         { field: 'version', value: `'${version}'` },
         { field: 'description', value: `'${existingDescription}'` }
     ];

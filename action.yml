@@ -62,6 +62,20 @@ inputs:
       'Author written into fxmanifest.lua of the built packs (e.g. Hexel)'
     required: false
     default: 'Koja Scripts'
+  # Hexel store (scripts also sold on hexelstore.com)
+  hexel:
+    description:
+      'Hexel store config (YAML: product, category, author). Builds the
+      open-source pack and publishes it with the changelog as a download on that
+      Hexel product. Release candidates are skipped.'
+    required: false
+    default: ''
+  hexelSecret:
+    description:
+      'Hexel store API secret (PROJECT_API_SECRET), e.g.
+      secrets.HEXEL_API_SECRET'
+    required: false
+    default: ''
   # Portal asset versioning
   version:
     description:

@@ -60,6 +60,12 @@ export interface ReleaseEvent {
   author?: { login?: string }
 }
 
+export interface HexelConfig {
+  product: string
+  category?: string
+  author: string
+}
+
 export interface VersionMeta {
   version: string
   changelog: string

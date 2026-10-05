@@ -482,11 +482,13 @@ export async function createEscrowedVersion(
  * Creates open source version of the asset
  * @param assetName The name of the asset
  * @param version Version written into fxmanifest.lua
+ * @param author Author written into fxmanifest.lua
  * @returns Path to the open source zip file
  */
 export async function createOpenSourceVersion(
   assetName: string,
-  version?: string
+  version?: string,
+  author?: string
 ): Promise<string> {
   core.info('Creating open-source version...')
 
@@ -524,7 +526,8 @@ export async function createOpenSourceVersion(
   updateFxManifestMetadata(
     fxmanifestPath,
     path.basename(getEnv('GITHUB_WORKSPACE')),
-    version
+    version,
+    author
   )
 
   if (fs.existsSync(fxmanifestPath)) {
@@ -548,11 +551,13 @@ escrow_ignore {
  * @param fxmanifestPath Path to fxmanifest.lua file
  * @param resourceName Name of the resource (from workspace folder)
  * @param version Version to write (defaults to the git ref name)
+ * @param author Author to write (defaults to the `author` input)
  */
 function updateFxManifestMetadata(
   fxmanifestPath: string,
   resourceName: string,
-  version = process.env.GITHUB_REF_NAME || '1.0.0'
+  version = process.env.GITHUB_REF_NAME || '1.0.0',
+  author = core.getInput('author') || 'Koja Scripts'
 ): void {
   if (!fs.existsSync(fxmanifestPath)) {
     return
@@ -571,10 +576,7 @@ function updateFxManifestMetadata(
 
   const updates = [
     { field: 'name', value: `'${displayName}'` },
-    {
-      field: 'author',
-      value: `'${core.getInput('author') || 'Koja Scripts'}'`
-    },
+    { field: 'author', value: `'${author}'` },
     { field: 'version', value: `'${version}'` },
     { field: 'description', value: `'${existingDescription}'` }
   ]

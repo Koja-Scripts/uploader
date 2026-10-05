@@ -7,6 +7,7 @@ import { Agent } from 'https'
 import { basename } from 'path'
 import { ReUploadResponse, BuildOptions, VersionMeta, ZipPaths } from './types'
 import { getPortalCookies } from './auth'
+import { parseHexelConfig, publishToHexel } from './hexel'
 import {
   PORTAL_MAX_VERSIONS,
   getReleaseEvent,
@@ -69,6 +70,28 @@ export async function run(): Promise<void> {
     )
     if (isNaN(processingTimeout) || processingTimeout < 0) {
       throw new Error('Invalid processingTimeout. Must be a number >= 0.')
+    }
+
+    // A repo sold only on the Hexel store has no CFX asset (and no cookie).
+    const hexelConfig = parseHexelConfig(core.getInput('hexel'))
+    const hexelSecret = core.getInput('hexelSecret')
+    const cfxWanted =
+      skipUpload ||
+      !hexelConfig ||
+      [
+        'assetId',
+        'assetName',
+        'zipPath',
+        'escrowed',
+        'openSource',
+        'hq',
+        'lq'
+      ].some(name => core.getInput(name))
+
+    if (hexelConfig && !cfxWanted) {
+      await publishToHexel(hexelConfig, resolveVersionMeta(), hexelSecret)
+      await sendReleaseNotification()
+      return
     }
 
     if (!assetId && !assetName && !skipUpload) {
@@ -356,6 +379,10 @@ export async function run(): Promise<void> {
 
       zipPath = await getZipPath(assetName, zipPath, makeZip)
       await uploadVersion(zipPath, assetId, ctx)
+    }
+
+    if (hexelConfig) {
+      await publishToHexel(hexelConfig, meta, hexelSecret)
     }
 
     await sendReleaseNotification()

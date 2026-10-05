@@ -13,6 +13,7 @@ import os from 'os'
 import path from 'path'
 import * as main from '../src/main'
 import * as auth from '../src/auth'
+import * as hexel from '../src/hexel'
 
 // Mock the action's main function
 const runMock = jest.spyOn(main, 'run')
@@ -126,6 +127,35 @@ describe('action', () => {
     await main.run()
 
     expect(setFailedMock).toHaveBeenCalledWith('auth blew up')
+  })
+
+  it('publishes only to Hexel without needing a CFX cookie', async () => {
+    getInputMock.mockImplementation(name => {
+      switch (name) {
+        case 'chunkSize':
+          return '1024'
+        case 'maxRetries':
+          return '3'
+        case 'hexel':
+          return 'product: carmarket'
+        case 'hexelSecret':
+          return 'secret'
+        default:
+          return ''
+      }
+    })
+    const publishMock = jest.spyOn(hexel, 'publishToHexel').mockResolvedValue()
+    const setFailedMock = jest.spyOn(core, 'setFailed')
+
+    await main.run()
+
+    expect(setFailedMock).not.toHaveBeenCalled()
+    expect(getPortalCookiesMock).not.toHaveBeenCalled()
+    expect(publishMock).toHaveBeenCalledWith(
+      { product: 'carmarket', category: undefined, author: 'Hexel' },
+      expect.objectContaining({ releaseCandidate: expect.any(Boolean) }),
+      'secret'
+    )
   })
 
   it('uploads a release as a new portal version', async () => {
