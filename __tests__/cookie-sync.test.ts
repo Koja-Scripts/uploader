@@ -47,7 +47,8 @@ describe('forum cookie sync', () => {
       token: 'pat',
       owner: 'Koja-Scripts',
       secrets: { FORUM_COOKIE: 'new-cookie' },
-      marker: 'FORUM_COOKIE'
+      marker: 'FORUM_COOKIE',
+      all: false
     })
   })
 

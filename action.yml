@@ -51,6 +51,12 @@ inputs:
       owner of this repository)'
     required: false
     default: ''
+  syncAll:
+    description:
+      'Write the secrets to every repository of the owner, not only the ones
+      that already have the cookie secret, so new repositories get them too'
+    required: false
+    default: false
   alertWebhook:
     description:
       'Discord webhook URL that gets a message when the run fails (e.g.

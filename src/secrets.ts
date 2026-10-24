@@ -17,6 +17,8 @@ export interface SecretSyncOptions {
    * included.
    */
   marker: string
+  /** Update every repository, so new ones get the secrets without setup. */
+  all?: boolean
 }
 
 function headers(token: string): Record<string, string> {
@@ -104,7 +106,7 @@ async function writeSecrets(
 
 /**
  * Write the given secrets to every repository of the owner that already has
- * the marker secret. A failing repository is reported and skipped so one
+ * the marker secret (or to all of them with `all`). A failing repository is reported and skipped so one
  * missing permission never blocks the rest.
  *
  * @returns The repositories that were updated.
@@ -112,7 +114,7 @@ async function writeSecrets(
 export async function syncSecrets(
   options: SecretSyncOptions
 ): Promise<string[]> {
-  const { token, owner, secrets, marker } = options
+  const { token, owner, secrets, marker, all } = options
   const current = (process.env.GITHUB_REPOSITORY || '').split('/')[1]
 
   const repos = await listRepositories(token, owner)
@@ -121,7 +123,11 @@ export async function syncSecrets(
 
   for (const repo of repos) {
     try {
-      if (repo !== current && !(await hasSecret(token, owner, repo, marker))) {
+      if (
+        !all &&
+        repo !== current &&
+        !(await hasSecret(token, owner, repo, marker))
+      ) {
         continue
       }
       await writeSecrets(token, owner, repo, secrets)

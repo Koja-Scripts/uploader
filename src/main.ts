@@ -458,7 +458,8 @@ async function storeForumCookie(
         process.env.GITHUB_REPOSITORY_OWNER ||
         (process.env.GITHUB_REPOSITORY || '').split('/')[0],
       secrets,
-      marker: cookieSecret
+      marker: cookieSecret,
+      all: core.getInput('syncAll').toLowerCase() === 'true'
     })
   } catch (error) {
     const reason = `Could not sync ${cookieSecret}: ${(error as Error).message}`

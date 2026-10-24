@@ -299943,7 +299943,8 @@ async function storeForumCookie(previous, current, strict) {
                 process.env.GITHUB_REPOSITORY_OWNER ||
                 (process.env.GITHUB_REPOSITORY || '').split('/')[0],
             secrets,
-            marker: cookieSecret
+            marker: cookieSecret,
+            all: core.getInput('syncAll').toLowerCase() === 'true'
         });
     }
     catch (error) {
@@ -300267,20 +300268,22 @@ async function writeSecrets(token, owner, repo, secrets) {
 }
 /**
  * Write the given secrets to every repository of the owner that already has
- * the marker secret. A failing repository is reported and skipped so one
+ * the marker secret (or to all of them with `all`). A failing repository is reported and skipped so one
  * missing permission never blocks the rest.
  *
  * @returns The repositories that were updated.
  */
 async function syncSecrets(options) {
-    const { token, owner, secrets, marker } = options;
+    const { token, owner, secrets, marker, all } = options;
     const current = (process.env.GITHUB_REPOSITORY || '').split('/')[1];
     const repos = await listRepositories(token, owner);
     const updated = [];
     const failed = [];
     for (const repo of repos) {
         try {
-            if (repo !== current && !(await hasSecret(token, owner, repo, marker))) {
+            if (!all &&
+                repo !== current &&
+                !(await hasSecret(token, owner, repo, marker))) {
                 continue;
             }
             await writeSecrets(token, owner, repo, secrets);
