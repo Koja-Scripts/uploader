@@ -33,7 +33,10 @@ describe('action', () => {
     getInputMock = jest.spyOn(core, 'getInput').mockImplementation()
     getPortalCookiesMock = jest
       .spyOn(auth, 'getPortalCookies')
-      .mockResolvedValue('session=abc123')
+      .mockResolvedValue({
+        cookies: 'session=abc123',
+        forumCookie: 'forum-cookie'
+      })
   })
 
   it('should fail if chunkSize is not a number', async () => {

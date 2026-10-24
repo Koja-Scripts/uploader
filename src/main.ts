@@ -8,6 +8,7 @@ import { basename } from 'path'
 import { ReUploadResponse, BuildOptions, VersionMeta, ZipPaths } from './types'
 import { getPortalCookies } from './auth'
 import { parseHexelConfig, publishToHexel } from './hexel'
+import { syncSecrets } from './secrets'
 import {
   PORTAL_MAX_VERSIONS,
   getReleaseEvent,
@@ -108,7 +109,10 @@ export async function run(): Promise<void> {
       )
     }
 
-    const cookies = await getPortalCookies(cookieInput, maxRetries)
+    const session = await getPortalCookies(cookieInput, maxRetries)
+    const cookies = session.cookies
+
+    await storeForumCookie(cookieInput, session.forumCookie, skipUpload)
 
     if (skipUpload) {
       core.info('Authenticated with CFX Portal. Skipping upload ...')
@@ -396,10 +400,121 @@ export async function run(): Promise<void> {
       core.error(`Response body: ${JSON.stringify(data)}`)
 
       const message = (data as { message?: unknown } | undefined)?.message
-      core.setFailed(typeof message === 'string' ? message : error.message)
+      const reason = typeof message === 'string' ? message : error.message
+      core.setFailed(reason)
+      await sendFailureAlert(reason)
     } else {
-      core.setFailed(error instanceof Error ? error.message : String(error))
+      const reason = error instanceof Error ? error.message : String(error)
+      core.setFailed(reason)
+      await sendFailureAlert(reason)
     }
+  }
+}
+
+/**
+ * Discourse rotates the forum `_t` token during the SSO walk and the old value
+ * dies shortly after, which breaks every other repository holding a copy. With
+ * a `githubToken` the new value is written back to every repository that has
+ * the cookie secret, so the cookie never has to be pasted again.
+ *
+ * `shareTokenAs` also copies the token itself into those repositories, so a
+ * single scheduled run can hand it to repos that do not have it yet.
+ */
+async function storeForumCookie(
+  previous: string,
+  current: string,
+  strict: boolean
+): Promise<void> {
+  const rotated = current !== previous
+  if (rotated) core.setSecret(current)
+
+  const token = core.getInput('githubToken')
+  const shareTokenAs = core.getInput('shareTokenAs')
+
+  if (!token) {
+    if (rotated) {
+      core.warning(
+        'The forum rotated the cookie, but no githubToken is set to save it. ' +
+          'Other repositories holding the old cookie will stop authenticating.'
+      )
+    }
+    return
+  }
+
+  if (!rotated && !shareTokenAs) {
+    core.info('Forum cookie unchanged, nothing to sync.')
+    return
+  }
+
+  const cookieSecret = core.getInput('cookieSecret') || 'FORUM_COOKIE'
+  const secrets: Record<string, string> = { [cookieSecret]: current }
+  if (shareTokenAs) secrets[shareTokenAs] = token
+
+  try {
+    await syncSecrets({
+      token,
+      owner:
+        core.getInput('syncOwner') ||
+        process.env.GITHUB_REPOSITORY_OWNER ||
+        (process.env.GITHUB_REPOSITORY || '').split('/')[0],
+      secrets,
+      marker: cookieSecret
+    })
+  } catch (error) {
+    const reason = `Could not sync ${cookieSecret}: ${(error as Error).message}`
+    // A refresh-only run exists to keep the cookie alive, so it must fail
+    // loudly. A release still uploads and only warns.
+    if (strict) throw new Error(reason)
+    core.warning(reason)
+  }
+}
+
+/**
+ * Post a failed run to a Discord webhook (`alertWebhook`), if configured.
+ */
+async function sendFailureAlert(reason: string): Promise<void> {
+  const webhook = core.getInput('alertWebhook')
+  if (!webhook) return
+
+  const repository = process.env.GITHUB_REPOSITORY || 'unknown repository'
+  const runUrl = process.env.GITHUB_RUN_ID
+    ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`
+    : undefined
+  const refreshOnly = core.getInput('skipUpload').toLowerCase() === 'true'
+
+  try {
+    await axios.post(
+      webhook,
+      {
+        username: 'Koja Uploader',
+        embeds: [
+          {
+            title: refreshOnly
+              ? '❌ Forum cookie refresh failed'
+              : '❌ CFX Portal upload failed',
+            description: `${reason.slice(0, 1500)}${
+              refreshOnly
+                ? '\n\nPaste a fresh `_t` cookie into FORUM_COOKIE of this repository and re-run the workflow.'
+                : ''
+            }`,
+            url: runUrl,
+            color: 0xe03131,
+            fields: [
+              { name: 'Repository', value: repository, inline: true },
+              {
+                name: 'Workflow',
+                value: process.env.GITHUB_WORKFLOW || '-',
+                inline: true
+              }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      },
+      { timeout: 15000 }
+    )
+  } catch (error) {
+    core.warning(`Failure alert not sent: ${(error as Error).message}`)
   }
 }
 

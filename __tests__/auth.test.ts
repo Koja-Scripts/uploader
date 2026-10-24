@@ -21,7 +21,10 @@ describe('getPortalCookies', () => {
     delete process.env.RUNNER_TEMP
   })
 
-  function mockSsoChain(meStatus: number): jest.SpyInstance {
+  function mockSsoChain(
+    meStatus: number,
+    forumSetCookie: string[] = []
+  ): jest.SpyInstance {
     jest.spyOn(axios, 'get').mockImplementation(async (url: string) => {
       if (url === SSO_INIT) {
         return {
@@ -33,7 +36,10 @@ describe('getPortalCookies', () => {
       if (url === FORUM_SSO) {
         return {
           status: 302,
-          headers: { location: PORTAL_AUTHENTICATE },
+          headers: {
+            location: PORTAL_AUTHENTICATE,
+            'set-cookie': forumSetCookie
+          },
           data: ''
         } as never
       }
@@ -53,7 +59,7 @@ describe('getPortalCookies', () => {
   it('walks the SSO redirect chain over HTTP and returns portal cookies', async () => {
     const postMock = mockSsoChain(200)
 
-    const cookies = await getPortalCookies('forum-cookie', 3)
+    const session = await getPortalCookies('forum-cookie', 3)
 
     expect(postMock).toHaveBeenCalledWith(
       SSO_CALLBACK,
@@ -64,8 +70,17 @@ describe('getPortalCookies', () => {
         })
       })
     )
-    expect(cookies).toContain('jwt=xyz789')
+    expect(session.cookies).toContain('jwt=xyz789')
+    expect(session.forumCookie).toBe('forum-cookie')
     expect(core.info).toHaveBeenCalledWith('✅ HTTP-SSO succeeded')
+  })
+
+  it('returns the forum cookie the forum rotated during the SSO walk', async () => {
+    mockSsoChain(200, ['_t=rotated-cookie; Path=/; Secure; HttpOnly'])
+
+    const session = await getPortalCookies('forum-cookie', 3)
+
+    expect(session.forumCookie).toBe('rotated-cookie')
   })
 
   it('does not report success when the portal session is not valid', async () => {
