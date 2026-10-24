@@ -26,6 +26,37 @@ inputs:
     description: 'Skip upload and only test authentication'
     required: false
     default: false
+  # Forum cookie rotation
+  githubToken:
+    description:
+      'Token with "Secrets: read and write" on the owner''s repositories (e.g.
+      secrets.SECRETS_PAT). The forum rotates the `_t` cookie on login; with a
+      token the new value is written to the cookie secret of every repository
+      that has it. Without it the other copies stop working.'
+    required: false
+    default: ''
+  cookieSecret:
+    description: 'Name of the secret that holds the forum cookie'
+    required: false
+    default: 'FORUM_COOKIE'
+  shareTokenAs:
+    description:
+      'Also copy githubToken into this secret name in the same repositories
+      (e.g. SECRETS_PAT), so a single scheduled run hands it to every repo'
+    required: false
+    default: ''
+  syncOwner:
+    description:
+      'Organization or user whose repositories get the secrets (default: the
+      owner of this repository)'
+    required: false
+    default: ''
+  alertWebhook:
+    description:
+      'Discord webhook URL that gets a message when the run fails (e.g.
+      secrets.DISCORD_ALERT_WEBHOOK)'
+    required: false
+    default: ''
   # Simple single asset upload
   assetId:
     description: 'Asset ID for simple single upload'

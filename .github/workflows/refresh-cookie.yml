@@ -1,0 +1,40 @@
+# Keeps the CFX forum cookie alive for every Koja-Scripts repository.
+#
+# The forum rotates the `_t` cookie whenever it is used, so this run logs in
+# once a day and writes the fresh value to FORUM_COOKIE of every repository
+# that has it (and copies SECRETS_PAT next to it, so release workflows can
+# save the cookie they rotate too).
+#
+# Secrets in this repository:
+#   FORUM_COOKIE           the `_t` cookie (paste it once; it is kept fresh)
+#   SECRETS_PAT            fine-grained token, Koja-Scripts, "Secrets: read and write"
+#   DISCORD_ALERT_WEBHOOK  Discord webhook for failures (optional)
+name: Refresh Forum Cookie
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: forum-cookie
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-cookie:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Refresh and distribute the forum cookie
+        uses: ./
+        with:
+          cookie: ${{ secrets.FORUM_COOKIE }}
+          skipUpload: true
+          githubToken: ${{ secrets.SECRETS_PAT }}
+          shareTokenAs: SECRETS_PAT
+          alertWebhook: ${{ secrets.DISCORD_ALERT_WEBHOOK }}

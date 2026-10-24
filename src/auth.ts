@@ -15,6 +15,15 @@ const USER_AGENT =
 
 const API_ORIGIN = 'https://portal-api.cfx.re/v1/'
 const PORTAL_HOST = 'portal.cfx.re'
+const FORUM_ORIGIN = 'https://forum.cfx.re/'
+const FORUM_HOST = 'forum.cfx.re'
+
+export interface PortalSession {
+  /** `name=value; ...` cookie header for portal-api.cfx.re. */
+  cookies: string
+  /** The forum `_t` value after the SSO walk (rotated or unchanged). */
+  forumCookie: string
+}
 
 /**
  * Obtain the CFX Portal session cookies needed for the upload API.
@@ -23,18 +32,23 @@ const PORTAL_HOST = 'portal.cfx.re'
  * browser). If that fails for any reason it falls back to the legacy Puppeteer
  * flow so a release can never break while the HTTP path is being proven.
  *
+ * Discourse rotates the `_t` token while it walks the SSO chain, and the old
+ * value stops working shortly after. The rotated value is returned as
+ * `forumCookie` so the caller can store it; it equals the input when the forum
+ * did not rotate it.
+ *
  * @param forumCookie The forum `_t` cookie value (from forum.cfx.re).
  * @param maxRetries Retry budget for the Puppeteer fallback navigation.
- * @returns The `name=value; ...` cookie header string for portal-api.cfx.re.
+ * @returns The cookie header for portal-api.cfx.re and the current `_t` value.
  */
 export async function getPortalCookies(
   forumCookie: string,
   maxRetries: number
-): Promise<string> {
+): Promise<PortalSession> {
   try {
-    const cookies = await getCookiesViaHttp(forumCookie)
+    const session = await getCookiesViaHttp(forumCookie)
     core.info('✅ HTTP-SSO succeeded')
-    return cookies
+    return session
   } catch (error) {
     core.warning(
       `HTTP-SSO failed, falling back to Puppeteer: ${(error as Error).message}`
@@ -80,7 +94,7 @@ async function jarGet(
  * Walk the Discourse SSO redirect chain over plain HTTP and collect the
  * resulting portal session cookies.
  */
-async function getCookiesViaHttp(forumCookie: string): Promise<string> {
+async function getCookiesViaHttp(forumCookie: string): Promise<PortalSession> {
   const jar = new CookieJar()
 
   // Seed the forum auth cookie so the SSO provider authenticates us.
@@ -88,12 +102,12 @@ async function getCookiesViaHttp(forumCookie: string): Promise<string> {
     new Cookie({
       key: '_t',
       value: forumCookie,
-      domain: 'forum.cfx.re',
+      domain: FORUM_HOST,
       path: '/',
       secure: true,
       httpOnly: true
     }),
-    'https://forum.cfx.re/'
+    FORUM_ORIGIN
   )
 
   // 1. Ask portal-api for the Discourse SSO provider URL (may set a nonce cookie).
@@ -143,7 +157,10 @@ async function getCookiesViaHttp(forumCookie: string): Promise<string> {
     throw new Error(`Portal session check failed with status ${me.status}`)
   }
 
-  return cookies
+  const forumCookies = await jar.getCookies(FORUM_ORIGIN)
+  const rotated = forumCookies.find(cookie => cookie.key === '_t')?.value
+
+  return { cookies, forumCookie: rotated || forumCookie }
 }
 
 /**
@@ -180,7 +197,7 @@ async function jarPost(
 async function getCookiesViaPuppeteer(
   forumCookie: string,
   maxRetries: number
-): Promise<string> {
+): Promise<PortalSession> {
   await ensureChrome()
 
   const chromePath = findSystemChrome()
@@ -219,11 +236,17 @@ async function getCookiesViaPuppeteer(
       )
     }
 
-    return await browser
-      .cookies()
-      .then(cookies =>
-        cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ')
-      )
+    const cookies = await browser.cookies()
+    const rotated = cookies.find(
+      cookie => cookie.name === '_t' && cookie.domain.endsWith(FORUM_HOST)
+    )?.value
+
+    return {
+      cookies: cookies
+        .map(cookie => `${cookie.name}=${cookie.value}`)
+        .join('; '),
+      forumCookie: rotated || forumCookie
+    }
   } finally {
     await browser.close()
   }
@@ -330,7 +353,7 @@ async function setForumCookie(
   await browser.setCookie({
     name: '_t',
     value: forumCookie,
-    domain: 'forum.cfx.re',
+    domain: FORUM_HOST,
     path: '/',
     expires: -1,
     size: 1,
