@@ -2,8 +2,8 @@
 #
 # The forum rotates the `_t` cookie whenever it is used, so this run logs in
 # once a day and writes the fresh value to FORUM_COOKIE of every repository
-# that has it (and copies SECRETS_PAT next to it, so release workflows can
-# save the cookie they rotate too).
+# of the organization, new ones included (and copies SECRETS_PAT next to it,
+# so release workflows can save the cookie they rotate too).
 #
 # Secrets in this repository:
 #   FORUM_COOKIE           the `_t` cookie (paste it once; it is kept fresh)
@@ -37,4 +37,5 @@ jobs:
           skipUpload: true
           githubToken: ${{ secrets.SECRETS_PAT }}
           shareTokenAs: SECRETS_PAT
+          syncAll: true
           alertWebhook: ${{ secrets.DISCORD_ALERT_WEBHOOK }}

@@ -89,6 +89,35 @@ describe('syncSecrets', () => {
     )
   })
 
+  it('updates every non-archived repository with all', async () => {
+    jest.spyOn(axios, 'get').mockImplementation(async (url: string) => {
+      if (url.startsWith(`${API}/orgs/Koja-Scripts/repos`)) {
+        return {
+          data: [
+            { name: 'uploader', archived: false },
+            { name: 'koja-new', archived: false },
+            { name: 'koja-old', archived: true }
+          ]
+        } as never
+      }
+      if (url.endsWith('/actions/secrets/public-key')) {
+        return { data: { key: publicKey, key_id: 'kid' } } as never
+      }
+      throw new Error(`unexpected URL: ${url}`)
+    })
+    jest.spyOn(axios, 'put').mockResolvedValue({ status: 204 } as never)
+
+    const updated = await syncSecrets({
+      token: 'pat',
+      owner: 'Koja-Scripts',
+      secrets: { FORUM_COOKIE: 'new-cookie' },
+      marker: 'FORUM_COOKIE',
+      all: true
+    })
+
+    expect(updated).toEqual(['uploader', 'koja-new'])
+  })
+
   it('reports a repository it cannot write and carries on', async () => {
     jest.spyOn(axios, 'get').mockImplementation(async (url: string) => {
       if (url.startsWith(`${API}/orgs/Koja-Scripts/repos`)) {
