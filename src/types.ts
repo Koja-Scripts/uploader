@@ -66,6 +66,8 @@ export interface HexelConfig {
   author: string
   /** Resource folder inside the zip (default: the repository name). */
   resource?: string
+  /** Prebuilt zip to publish instead of building the open-source pack. */
+  zip?: string
 }
 
 export interface VersionMeta {

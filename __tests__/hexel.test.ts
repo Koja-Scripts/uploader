@@ -41,7 +41,8 @@ describe('hexel', () => {
         product: 'carmarket',
         category: 'scripts',
         author: 'Hexel',
-        resource: undefined
+        resource: undefined,
+        zip: undefined
       }
     )
     expect(
@@ -50,7 +51,8 @@ describe('hexel', () => {
       product: 'x',
       category: undefined,
       author: 'HX',
-      resource: 'koja-hud'
+      resource: 'koja-hud',
+      zip: undefined
     })
     expect(parseHexelConfig('  ')).toBeNull()
     expect(() => parseHexelConfig('category: a')).toThrow('product')
@@ -92,6 +94,32 @@ describe('hexel', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer secret' })
       })
     )
+  })
+
+  it('publishes a prebuilt zip without building one', async () => {
+    const zip = path.join(tmp, 'koja-fishing-hexel.zip')
+    fs.writeFileSync(zip, 'zip')
+    const build = jest.spyOn(utils, 'createOpenSourceVersion')
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ data: {} } as never)
+
+    await publishToHexel(
+      { product: 'fishing', author: 'Hexel', zip },
+      meta,
+      'secret'
+    )
+
+    expect(build).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledTimes(1)
+
+    await expect(
+      publishToHexel(
+        { product: 'fishing', author: 'Hexel', zip: path.join(tmp, 'no.zip') },
+        meta,
+        'secret'
+      )
+    ).rejects.toThrow('does not exist')
   })
 
   it('skips release candidates and requires the secret', async () => {
