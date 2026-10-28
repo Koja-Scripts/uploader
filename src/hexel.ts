@@ -40,7 +40,8 @@ export function parseHexelConfig(input: string): HexelConfig | null {
     product: raw.product,
     category: raw.category || undefined,
     author: raw.author || 'Hexel',
-    resource: raw.resource || undefined
+    resource: raw.resource || undefined,
+    zip: raw.zip || undefined
   }
 }
 
@@ -62,8 +63,9 @@ export function toSemver(version: string): string | null {
 }
 
 /**
- * Builds the open-source pack with the Hexel author and publishes it as a
- * download (with changelog) on the Hexel store product.
+ * Builds the open-source pack with the Hexel author (or takes the prebuilt
+ * `zip`) and publishes it as a download (with changelog) on the Hexel store
+ * product.
  * @param config The Hexel config.
  * @param meta The release metadata.
  * @param secret The Hexel store API secret (PROJECT_API_SECRET).
@@ -92,14 +94,23 @@ export async function publishToHexel(
     )
   }
 
-  core.info(`📦 Building the Hexel pack for "${config.product}"...`)
-  deleteIfExists('open-source/')
-  const zipPath = await createOpenSourceVersion(
-    config.product,
-    meta.version,
-    config.author,
-    config.resource
-  )
+  let zipPath: string
+  if (config.zip) {
+    if (!fs.existsSync(config.zip)) {
+      throw new Error(`The hexel zip "${config.zip}" does not exist.`)
+    }
+    zipPath = config.zip
+    core.info(`📦 Using the prebuilt Hexel pack ${zipPath}`)
+  } else {
+    core.info(`📦 Building the Hexel pack for "${config.product}"...`)
+    deleteIfExists('open-source/')
+    zipPath = await createOpenSourceVersion(
+      config.product,
+      meta.version,
+      config.author,
+      config.resource
+    )
+  }
 
   const form = new FormData()
   form.append('file', fs.createReadStream(zipPath), {
